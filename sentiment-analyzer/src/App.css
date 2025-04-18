@@ -1,0 +1,79 @@
+.App {
+  text-align: center;
+  padding: 2rem;
+}
+
+.search-container {
+  margin-bottom: 1rem;
+}
+
+.search-input {
+  padding: 0.5rem;
+  font-size: 1rem;
+  width: 300px;
+  margin-right: 10px;
+}
+
+.search-button {
+  padding: 0.5rem 1rem;
+  font-size: 1rem;
+}
+
+.tweet-list {
+  margin-top: 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.tweet-card {
+  background: #1d1d1d;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  border-radius: 8px;
+  width: 70%;
+  color: #fff;
+  text-align: left;
+}
+
+.error {
+  color: red;
+}
+.search-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 20px 0;
+  gap: 10px;
+}
+
+.search-input {
+  padding: 12px 16px;
+  width: 300px;
+  border: 2px solid #ddd;
+  border-radius: 30px;
+  font-size: 16px;
+  outline: none;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.search-input:focus {
+  border-color: #4CAF50;
+  box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.2);
+}
+
+.search-button {
+  padding: 12px 24px;
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 30px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+.search-button:hover {
+  background-color: #45a049;
+}
