@@ -1,120 +1,186 @@
 const express = require("express");
 const cors = require("cors");
-const { TwitterApi } = require("twitter-api-v2");
-const Sentiment = require("sentiment");  // Si vous utilisez sentiment pour l'analyse
-const mongoose = require("mongoose");
 require("dotenv").config();
+const { TwitterApi } = require("twitter-api-v2");
+const Tweet = require("C:/Users/pourtoi/sentiment-analyzer/backend/models/Tweet");
+const mongoose = require("mongoose");
+const Sentiment = require("sentiment");
 
-// Configuration de l'API Twitter
 const twitterClient = new TwitterApi({
-    appKey: process.env.TWITTER_API_KEY,
-    appSecret: process.env.TWITTER_API_SECRET,
-    accessToken: process.env.TWITTER_ACCESS_TOKEN,
-    accessSecret: process.env.TWITTER_ACCESS_TOKEN_SECRET,
+  appKey: process.env.TWITTER_API_KEY,
+  appSecret: process.env.TWITTER_API_SECRET,
+  accessToken: process.env.TWITTER_ACCESS_TOKEN,
+  accessSecret: process.env.TWITTER_ACCESS_TOKEN_SECRET,
 });
 
-// Connexion à MongoDB (en utilisant MongoDB Atlas ou MongoDB local)
-mongoose.connect(process.env.MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-    .then(() => console.log("Connecté à la base de données MongoDB"))
-    .catch((error) => console.error("Erreur de connexion MongoDB:", error));
+// Connexion à MongoDB
+mongoose
+  .connect("mongodb+srv://ibtissamebouazzaoui822:6GIKxHQBhKvJ3NHp@cluster0.o4l5bat.mongodb.net/tweet_sentiment?retryWrites=true&w=majority&appName=Cluster0")
+  .then(() => {
+    console.log("✅ Connecté à MongoDB");
 
-const app = express();
-app.use(cors());
-app.use(express.json());
+    // Démarre l’API **uniquement** après la connexion
+    const app = express();
+    app.use(cors());
+    app.use(express.json());
 
-// Schéma Mongoose pour un Tweet
-const tweetSchema = new mongoose.Schema({
-    tweetId: { type: String, required: true, unique: true },
-    text: { type: String, required: true },
-    sentiment: { type: String },
-    score: { type: Number },
-    date: { type: Date, default: Date.now },
-});
+    const sentiment = new Sentiment();
 
-// Modèle pour les tweets
-const Tweet = mongoose.model("Tweet", tweetSchema);
+    // Test
+    app.get("/", (req, res) => res.send("Serveur backend en ligne !"));
 
-// Initialisation de l'analyseur de sentiment
-const sentiment = new Sentiment();
-
-// Route de test pour vérifier si le serveur fonctionne
-app.get("/", (req, res) => {
-    res.send("Serveur backend en ligne !");
-});
-
-// Route pour récupérer des tweets et analyser le sentiment
+    // Recherche + analyse
 app.get("/search/:query", async (req, res) => {
+  try {
     const { query } = req.params;
 
-    try {
-        // ✅ Étape 1 : Vérifier si des tweets similaires sont déjà en base
-        const cachedTweets = await Tweet.find({ text: { $regex: query, $options: 'i' } });
+    // 🔍 On cherche dans la base MongoDB s'il y a des tweets contenant ce mot-clé
+    const existingTweets = await Tweet.find({ text: { $regex: query, $options: "i" } });
 
-        if (cachedTweets.length > 0) {
-            console.log("✅ Données chargées depuis MongoDB.");
-            return res.json(
-                cachedTweets.map((tweet) => ({
-                    tweetId: tweet.tweetId,
-                    text: tweet.text,
-                    sentiment: tweet.sentiment,
-                    score: tweet.score.toFixed(2),
-                }))
-            );
-        }
+    if (existingTweets.length > 0) {
+      console.log(`✅ ${existingTweets.length} tweets trouvés dans MongoDB pour "${query}"`);
 
-        // ✅ Étape 2 : Sinon, appel à l’API Twitter
-        const result = await twitterClient.v2.search(query, { max_results: 10 });
-        const tweets = result.data?.data || [];
+      // Analyse des sentiments sur les tweets récupérés de la base
+      const sentiment = new Sentiment();
+      const analyzed = existingTweets.map((t) => {
+        const a = sentiment.analyze(t.text);
+        let score = a.comparative;
+        let label = "Neutre";
+        if (score > 0) { label = "Positif"; score = Math.min(score * 100, 100); }
+        else if (score < 0) { label = "Négatif"; score = Math.max(-score * 100, 0); }
 
-        const analyzedTweets = await Promise.all(
-            tweets.map(async (tweet) => {
-                const sentimentAnalysis = sentiment.analyze(tweet.text);
-                let scorePercentage = 0;
+        return {
+          tweetId: t.tweetId,
+          text: t.text,
+          sentiment: label,
+          score: score.toFixed(2),
+        };
+      });
 
-                if (sentimentAnalysis.comparative > 0) {
-                    scorePercentage = Math.min(sentimentAnalysis.comparative * 100, 100);
-                } else if (sentimentAnalysis.comparative < 0) {
-                    scorePercentage = Math.max(sentimentAnalysis.comparative * -100, 0);
-                }
-
-                let sentimentType = "Neutre";
-                if (sentimentAnalysis.comparative > 0) {
-                    sentimentType = "Positif";
-                } else if (sentimentAnalysis.comparative < 0) {
-                    sentimentType = "Négatif";
-                }
-
-                const existingTweet = await Tweet.findOne({ tweetId: tweet.id });
-                if (!existingTweet) {
-                    const newTweet = new Tweet({
-                        tweetId: tweet.id,
-                        text: tweet.text,
-                        sentiment: sentimentType,
-                        score: scorePercentage,
-                    });
-                    await newTweet.save();
-                }
-
-                return {
-                    tweetId: tweet.id,
-                    text: tweet.text,
-                    sentiment: sentimentType,
-                    score: scorePercentage.toFixed(2),
-                };
-            })
-        );
-
-        res.json(analyzedTweets);
-    } catch (error) {
-        if (error.code === 429) {
-            console.error("Trop de requêtes envoyées à l'API Twitter. Attendez un peu...");
-            return res.status(429).json({ error: "Trop de requêtes envoyées. Réessayez dans quelques minutes." });
-        }
-        console.error("Erreur lors de la recherche Twitter:", error.message);
-        res.status(500).json({ error: "Erreur lors de la recherche." });
+      return res.json(analyzed);
     }
+
+    // 🤖 Sinon, on interroge Twitter (si pas déjà dans Mongo)
+    const result = await twitterClient.v2.search(query, { max_results: 10 });
+    const tweets = result.data?.data || [];
+
+    if (tweets.length === 0) {
+      return res.status(404).json({ error: "Aucun tweet trouvé." });
+    }
+
+    const analyzed = await Promise.all(
+      tweets.map(async (t) => {
+        const a = sentiment.analyze(t.text);
+        let score = a.comparative;
+        let label = "Neutre";
+        if (score > 0) { label = "Positif"; score = Math.min(score * 100, 100); }
+        else if (score < 0) { label = "Négatif"; score = Math.max(-score * 100, 0); }
+
+        const tweetData = {
+          tweetId: t.id,
+          text: t.text,
+        };
+
+        await Tweet.create(tweetData); // 💾 enregistrement dans MongoDB
+
+        return {
+          tweetId: t.id,
+          text: t.text,
+          sentiment: label,
+          score: score.toFixed(2),
+        };
+      })
+    );
+
+    res.json(analyzed);
+  } catch (error) {
+    console.error("Erreur Twitter :", error);
+    const msg = error.code === 429
+      ? "Limite API atteinte, réessayez plus tard."
+      : "Erreur interne lors de la recherche.";
+    res.status(500).json({ error: msg });
+  }
 });
-
-
-// Démarrage du serveur
-app.listen(5000, () => console.log("Serveur lancé sur le port 5000"));
+app.get("/search/:query", async (req, res) => {
+    const { query } = req.params;
+    const sentiment = new Sentiment();
+  
+    try {
+      // 🔁 1. Essayer d’abord avec l’API Twitter
+      const result = await twitterClient.v2.search(query, { max_results: 10 });
+      const tweets = result.data?.data || [];
+  
+      if (tweets.length === 0) {
+        return res.status(404).json({ error: "Aucun tweet trouvé sur Twitter." });
+      }
+  
+      // 🔍 2. Analyser + enregistrer les nouveaux tweets dans Mongo
+      const analyzed = await Promise.all(
+        tweets.map(async (t) => {
+          const a = sentiment.analyze(t.text);
+          let score = a.comparative;
+          let label = "Neutre";
+          if (score > 0) { label = "Positif"; score = Math.min(score * 100, 100); }
+          else if (score < 0) { label = "Négatif"; score = Math.max(-score * 100, 0); }
+  
+          const tweetData = {
+            tweetId: t.id,
+            text: t.text,
+          };
+  
+          await Tweet.create(tweetData); // 💾 Enregistrement
+  
+          return {
+            tweetId: t.id,
+            text: t.text,
+            sentiment: label,
+            score: score.toFixed(2),
+          };
+        })
+      );
+  
+      return res.json(analyzed);
+    } catch (error) {
+      console.warn("⚠️ Échec appel Twitter API :", error.code || error.message);
+  
+      // 👀 3. Si erreur, on regarde dans Mongo
+      const fallbackTweets = await Tweet.find({ text: { $regex: query, $options: "i" } });
+  
+      if (fallbackTweets.length > 0) {
+        console.log(`📦 ${fallbackTweets.length} tweets trouvés dans MongoDB en fallback`);
+  
+        const analyzed = fallbackTweets.map((t) => {
+          const a = sentiment.analyze(t.text);
+          let score = a.comparative;
+          let label = "Neutre";
+          if (score > 0) { label = "Positif"; score = Math.min(score * 100, 100); }
+          else if (score < 0) { label = "Négatif"; score = Math.max(-score * 100, 0); }
+  
+          return {
+            tweetId: t.tweetId,
+            text: t.text,
+            sentiment: label,
+            score: score.toFixed(2),
+          };
+        });
+  
+        return res.json(analyzed);
+      }
+  
+      // 4. Rien trouvé dans Mongo non plus
+      const msg = error.code === 429
+        ? "Limite API atteinte et aucun tweet en cache local."
+        : "Erreur interne et aucun tweet en cache.";
+      return res.status(500).json({ error: msg });
+    }
+  });
+  
+    
+    
+    const PORT = 5000;
+    app.listen(PORT, () => console.log(`Serveur lancé sur le port ${PORT}`));
+  })
+  .catch((err) => {
+    console.error(" Erreur de connexion MongoDB :", err);
+    process.exit(1); // Arrêter le process si pas de DB
+  });
