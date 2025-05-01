@@ -15,7 +15,7 @@ const twitterClient = new TwitterApi({
 
 // Connexion à MongoDB
 mongoose
-  .connect("mongodb+srv://ibtissamebouazzaoui822:6GIKxHQBhKvJ3NHp@cluster0.o4l5bat.mongodb.net/tweet_sentiment?retryWrites=true&w=majority&appName=Cluster0")
+  .connect("mongodb+srv://XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX@cluster0.o4l5bat.mongodb.net/tweet_sentiment?retryWrites=true&w=majority&appName=Cluster0")
   .then(() => {
     console.log("✅ Connecté à MongoDB");
 
